@@ -1,0 +1,82 @@
+sequenceDiagram
+    autonumber
+    actor Atendente
+    participant UI as :MenuTerminal
+    participant Service as :PedidoService
+    participant Cardapio as :Cardapio
+    participant Pedido as :Pedido
+    participant Item as :ItemPedido
+
+    %% Início do Atendimento
+    Atendente->>UI: seleciona "1 - Novo Pedido"
+    UI-->>Atendente: solicita nome e endereço/telefone
+    Atendente->>UI: informa dados do cliente
+    UI->>Service: iniciarPedido(nome, endereco)
+    Service->>Pedido: new Pedido(nome, endereco)
+    activate Pedido
+    Pedido-->>Service: pedido
+    deactivate Pedido
+
+    %% Loop de Inclusão de Pizzas
+    loop Enquanto desejar adicionar pizza (FA02)
+        UI->>Cardapio: listarSabores()
+        Cardapio-->>UI: List<Sabor>
+        UI-->>Atendente: exibe cardápio e solicita modalidade
+
+        alt Pizza Meio a Meio (Fluxo Principal)
+            Atendente->>UI: escolhe Meio a Meio, tamanho, cod1, cod2, obs
+            UI->>Service: adicionarPizzaMeioAMeio(pedido, tamanho, cod1, cod2, obs)
+            Service->>Cardapio: buscarPorCodigo(cod1)
+            Cardapio-->>Service: sabor1
+            Service->>Cardapio: buscarPorCodigo(cod2)
+            Cardapio-->>Service: sabor2
+            Service->>Item: new ItemPedido(tamanho, sabor1, sabor2, obs)
+            note right of Item: RN01: Preço = maior valor entre sabor1 e sabor2
+        else Pizza Inteira (FA01)
+            Atendente->>UI: escolhe Inteira, tamanho, cod1, obs
+            UI->>Service: adicionarPizzaInteira(pedido, tamanho, cod1, obs)
+            Service->>Cardapio: buscarPorCodigo(cod1)
+            Cardapio-->>Service: sabor1
+            Service->>Item: new ItemPedido(tamanho, sabor1, null, obs)
+            note right of Item: Preço integral do sabor1
+        end
+
+        Service->>Pedido: adicionarItem(item)
+        UI-->>Atendente: pergunta "Deseja adicionar outra pizza?"
+        Atendente->>UI: responde (Sim / Não)
+    end
+
+    %% Cálculo de Total e Pagamento
+    UI->>Pedido: calcularTotal()
+    Pedido-->>UI: valorTotal
+    UI-->>Atendente: exibe valorTotal e solicita forma de pagamento
+
+    alt Pagamento em Dinheiro (Fluxo Principal)
+        Atendente->>UI: seleciona "1 - Dinheiro"
+        
+        loop Enquanto valorPago menor que valorTotal (FE04)
+            UI-->>Atendente: solicita valor em dinheiro ("Troco para quanto?")
+            Atendente->>UI: informa valorPago
+            UI->>Service: validarEProcessarDinheiro(pedido, valorPago)
+        end
+
+        Service->>Pedido: registrarPagamento(DINHEIRO, valorPago)
+        Service->>Pedido: calcularTroco()
+        note right of Pedido: RN02: troco = valorPago - valorTotal
+        Pedido-->>Service: valorTroco
+
+    else Pagamento via PIX ou Cartão (FA04)
+        Atendente->>UI: seleciona "2 - PIX" ou "3 - Cartão"
+        UI->>Service: processarPagamentoEletronico(pedido, formaPagamento)
+        Service->>Pedido: registrarPagamento(formaPagamento, valorTotal)
+        note right of Pedido: RN02: troco = R$ 0,00
+    end
+
+    %% Confirmação e Geração da Comanda
+    UI-->>Atendente: exibe resumo completo (itens, total, troco) e pede confirmação
+    Atendente->>UI: confirma pedido
+    UI->>Service: finalizarPedido(pedido)
+    Service->>Pedido: setStatus(StatusPedido.RECEBIDO)
+    note right of Service: RN03: Salva na lista de pedidos ativos
+    Service-->>UI: numeroComanda
+    UI-->>Atendente: exibe "Pedido #numeroComanda enviado para a cozinha!"
